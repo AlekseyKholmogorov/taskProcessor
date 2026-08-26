@@ -1,6 +1,8 @@
 package com.example.tasks;
 
+import io.vertx.config.ConfigRetriever;
 import io.vertx.core.AbstractVerticle;
+import io.vertx.core.DeploymentOptions;
 import io.vertx.core.Promise;
 import io.vertx.core.Vertx;
 import io.vertx.core.http.ServerWebSocket;
@@ -26,6 +28,7 @@ import java.util.concurrent.ConcurrentHashMap;
 public class MainVerticle extends AbstractVerticle {
 
     private Pool dbPool;
+    private AppConfig appConfig;
     private final Map<Integer, ServerWebSocket> activeSockets = new ConcurrentHashMap<>();
 
     /**
@@ -35,7 +38,11 @@ public class MainVerticle extends AbstractVerticle {
      */
     public static void main(String[] args) {
         Vertx vertx = Vertx.vertx();
-        vertx.deployVerticle(new MainVerticle())
+
+        ConfigRetriever.create(vertx).getConfig()
+                .compose(conf -> vertx.deployVerticle(
+                        new MainVerticle(),
+                        new DeploymentOptions().setConfig(conf)))
                 .onSuccess(id -> System.out.println("MainVerticle успешно развернут. ID: " + id))
                 .onFailure(err -> {
                     System.err.println("Ошибка при развертывании MainVerticle:");
@@ -46,19 +53,20 @@ public class MainVerticle extends AbstractVerticle {
 
     @Override
     public void start(Promise<Void> startPromise) {
+        appConfig = new AppConfig(config());
         initDatabasePool();
 
         // Деплой воркера для фоновых задач
-        vertx.deployVerticle(new WorkerVerticle(dbPool));
+        vertx.deployVerticle(new WorkerVerticle(dbPool), new DeploymentOptions().setConfig(config()));
 
         Router router = Router.router(vertx);
         router.route().handler(BodyHandler.create());
 
         // REST API
-        router.post("/api/tasks").handler(this::handleStartTask);
+        router.post(appConfig.apiTasksPath()).handler(this::handleStartTask);
 
         // Слушаем обновления прогресса из EventBus (от воркера)
-        vertx.eventBus().<JsonObject>consumer("task.progress", message -> {
+        vertx.eventBus().<JsonObject>consumer(appConfig.taskProgressAddress(), message -> {
             JsonObject update = message.body();
             Integer userId = update.getInteger("userId");
             ServerWebSocket ws = activeSockets.get(userId);
@@ -71,9 +79,9 @@ public class MainVerticle extends AbstractVerticle {
         vertx.createHttpServer()
                 .requestHandler(router)
                 .webSocketHandler(this::handleWebSocket)
-                .listen(8080)
+                .listen(appConfig.httpPort())
                 .onSuccess(server -> {
-                    System.out.println("HTTP сервер запущен на порту 8080");
+                    System.out.println("HTTP сервер запущен на порту " + server.actualPort());
                     startPromise.complete();
                 })
                 .onFailure(err -> {
@@ -88,13 +96,13 @@ public class MainVerticle extends AbstractVerticle {
      */
     private void initDatabasePool() {
         PgConnectOptions connectOptions = new PgConnectOptions()
-                .setPort(Integer.parseInt(System.getenv().getOrDefault("DB_PORT", "5432")))
-                .setHost(System.getenv().getOrDefault("DB_HOST", "localhost"))
-                .setDatabase(System.getenv().getOrDefault("DB_NAME", "task_db"))
-                .setUser(System.getenv().getOrDefault("DB_USER", "vertx"))
-                .setPassword(System.getenv().getOrDefault("DB_PASSWORD", "vertx_password"));
+                .setHost(appConfig.dbHost())
+                .setPort(appConfig.dbPort())
+                .setDatabase(appConfig.dbName())
+                .setUser(appConfig.dbUser())
+                .setPassword(appConfig.dbPassword());
 
-        PoolOptions poolOptions = new PoolOptions().setMaxSize(5);
+        PoolOptions poolOptions = new PoolOptions().setMaxSize(appConfig.dbPoolMaxSize());
 
         dbPool = PgBuilder.pool()
                 .with(poolOptions)
@@ -127,7 +135,7 @@ public class MainVerticle extends AbstractVerticle {
 
                     // Отправляем задачу воркеру через EventBus
                     JsonObject taskData = new JsonObject().put("taskId", taskId).put("userId", userId);
-                    vertx.eventBus().send("task.start", taskData);
+                    vertx.eventBus().send(appConfig.taskStartAddress(), taskData);
 
                     ctx.response()
                             .putHeader("content-type", "application/json")
@@ -147,9 +155,10 @@ public class MainVerticle extends AbstractVerticle {
      */
     private void handleWebSocket(ServerWebSocket ws) {
         String path = ws.path();
-        if (path.startsWith("/ws/tasks/")) {
+        String prefix = appConfig.wsPathPrefix();
+        if (path.startsWith(prefix)) {
             try {
-                String userIdStr = path.substring("/ws/tasks/".length());
+                String userIdStr = path.substring(prefix.length());
                 Integer userId = Integer.parseInt(userIdStr);
 
                 activeSockets.put(userId, ws);

@@ -12,6 +12,7 @@ import io.vertx.sqlclient.Tuple;
 public class WorkerVerticle extends AbstractVerticle {
 
     private final Pool dbPool;
+    private AppConfig appConfig;
 
     /**
      * Конструктор WorkerVerticle.
@@ -24,7 +25,8 @@ public class WorkerVerticle extends AbstractVerticle {
 
     @Override
     public void start() {
-        vertx.eventBus().<JsonObject>consumer("task.start", message -> {
+        appConfig = new AppConfig(config());
+        vertx.eventBus().<JsonObject>consumer(appConfig.taskStartAddress(), message -> {
             JsonObject taskData = message.body();
             processTask(taskData.getInteger("taskId"), taskData.getInteger("userId"));
         });
@@ -38,7 +40,7 @@ public class WorkerVerticle extends AbstractVerticle {
      */
     private void processTask(Integer taskId, Integer userId) {
         // Устанавливаем таймер, который срабатывает каждые 1000мс (1 сек)
-        vertx.setPeriodic(1000, id -> {
+        vertx.setPeriodic(appConfig.tickIntervalMs(), id -> {
             updateProgress(taskId, userId, id);
         });
     }
@@ -56,7 +58,7 @@ public class WorkerVerticle extends AbstractVerticle {
                 .onSuccess(rowSet -> {
                     if (rowSet.iterator().hasNext()) {
                         int currentProgress = rowSet.iterator().next().getInteger("progress");
-                        int newProgress = currentProgress + 20;
+                        int newProgress = currentProgress + appConfig.progressStep();
 
                         if (newProgress >= 100) {
                             newProgress = 100;
@@ -72,7 +74,7 @@ public class WorkerVerticle extends AbstractVerticle {
                                 .put("progress", newProgress)
                                 .put("status", newProgress == 100 ? "COMPLETED" : "IN_PROGRESS");
 
-                        vertx.eventBus().publish("task.progress", update);
+                        vertx.eventBus().publish(appConfig.taskProgressAddress(), update);
                     }
                 })
                 .onFailure(err -> System.err.println("Failed to fetch progress: " + err.getMessage()));

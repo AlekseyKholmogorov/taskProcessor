@@ -34,3 +34,5 @@ out/
 build/
 .gradle/
 !gradle/wrapper/gradle-wrapper.jar
+
+config/app/config.json

@@ -27,6 +27,7 @@ java {
 dependencies {
     implementation platform("io.vertx:vertx-stack-depchain:$vertxVersion")
     implementation 'io.vertx:vertx-core'
+    implementation 'io.vertx:vertx-config'
     implementation 'io.vertx:vertx-web'
     implementation 'io.vertx:vertx-pg-client'
     implementation 'com.fasterxml.jackson.core:jackson-databind:2.17.0'
@@ -52,6 +53,7 @@ checkstyle {
 
 tasks.withType(JavaCompile).configureEach {
     options.release.set(21)
+    options.encoding = 'UTF-8'
 }
 
 tasks.named('shadowJar') {

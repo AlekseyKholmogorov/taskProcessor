@@ -2,6 +2,7 @@ FROM gradle:8.7-jdk21 AS builder
 WORKDIR /app
 COPY build.gradle settings.gradle ./
 COPY src ./src
+COPY config/checkstyle ./config/checkstyle
 RUN gradle shadowJar --no-daemon
 
 FROM eclipse-temurin:21-jre-alpine
