@@ -1,0 +1,33 @@
+version: '3.8'
+
+services:
+  db:
+    image: postgres:18.6-alpine3.24
+    environment:
+      POSTGRES_USER: vertx
+      POSTGRES_PASSWORD: vertx_password
+      POSTGRES_DB: task_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U vertx -d task_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  app:
+    build: .
+    ports:
+      - "8080:8080"
+    environment:
+      - DB_HOST=db
+      - DB_PORT=5432
+      - DB_USER=vertx
+      - DB_PASSWORD=vertx_password
+      - DB_NAME=task_db
+    depends_on:
+      db:
+        condition: service_healthy
+
