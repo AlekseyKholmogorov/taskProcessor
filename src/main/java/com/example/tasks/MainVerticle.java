@@ -60,6 +60,11 @@ public class MainVerticle extends VerticleBase {
                 .compose(id -> vertx.deployVerticle(new HttpServerVerticle(taskRepository), options));
     }
 
+    @Override
+    public Future<?> stop() {
+        return dbPool == null ? Future.succeededFuture() : dbPool.close();
+    }
+
     /**
      * Инициализирует пул подключений к PostgreSQL на основе разобранной конфигурации.
      */
