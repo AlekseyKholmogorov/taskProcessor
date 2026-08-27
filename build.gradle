@@ -33,6 +33,7 @@ dependencies {
     implementation 'io.vertx:vertx-pg-client'
     implementation 'io.vertx:vertx-launcher-application'
     implementation 'com.fasterxml.jackson.core:jackson-databind:2.17.0'
+    implementation 'org.slf4j:slf4j-api'
     implementation 'ch.qos.logback:logback-classic:1.5.3'
 }
 

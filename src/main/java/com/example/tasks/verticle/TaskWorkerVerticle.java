@@ -7,12 +7,16 @@ import com.example.tasks.repository.TaskRepository;
 import io.vertx.core.Future;
 import io.vertx.core.VerticleBase;
 import io.vertx.core.json.JsonObject;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Вертикл для имитации фоновой обработки длительных задач.
  * Не блокирует EventLoop основного потока благодаря использованию таймеров и асинхронного EventBus.
  */
 public class TaskWorkerVerticle extends VerticleBase {
+
+    private static final Logger LOG = LoggerFactory.getLogger(TaskWorkerVerticle.class);
 
     private final TaskRepository taskRepository;
     private AppConfig appConfig;
@@ -71,7 +75,7 @@ public class TaskWorkerVerticle extends VerticleBase {
                     updateTaskInDb(taskId, progress.status(), newProgress);
                     vertx.eventBus().publish(appConfig.taskProgressAddress(), progress.toJson());
                 })
-                .onFailure(err -> System.err.println("Failed to fetch progress: " + err.getMessage()));
+                .onFailure(err -> LOG.error("Failed to fetch progress for task {}", taskId, err));
     }
 
     /**
@@ -83,6 +87,6 @@ public class TaskWorkerVerticle extends VerticleBase {
      */
     private void updateTaskInDb(Integer taskId, TaskStatus status, int progress) {
         taskRepository.updateProgress(taskId, status, progress)
-                .onFailure(err -> System.err.println("Failed to update task: " + err.getMessage()));
+                .onFailure(err -> LOG.error("Failed to update task {}", taskId, err));
     }
 }

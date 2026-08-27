@@ -11,6 +11,8 @@ import io.vertx.core.http.ServerWebSocket;
 import io.vertx.core.json.JsonObject;
 import io.vertx.ext.web.Router;
 import io.vertx.ext.web.handler.BodyHandler;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Вертикл HTTP-слоя.
@@ -21,8 +23,11 @@ import io.vertx.ext.web.handler.BodyHandler;
  */
 public class HttpServerVerticle extends VerticleBase {
 
+    private static final Logger LOG = LoggerFactory.getLogger(HttpServerVerticle.class);
+
     private final TaskRepository taskRepository;
     private final WebSocketRegistry socketRegistry = new WebSocketRegistry();
+
     private AppConfig appConfig;
 
     /**
@@ -52,7 +57,7 @@ public class HttpServerVerticle extends VerticleBase {
                 .requestHandler(router)
                 .webSocketHandler(this::handleWebSocket)
                 .listen(appConfig.httpPort())
-                .onSuccess(server -> System.out.println("HTTP сервер запущен на порту " + server.actualPort()));
+                .onSuccess(server -> LOG.info("HTTP server started on port {}", server.actualPort()));
     }
 
     /**
