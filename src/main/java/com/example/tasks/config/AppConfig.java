@@ -1,6 +1,8 @@
 package com.example.tasks.config;
 
 import io.vertx.core.json.JsonObject;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Типобезопасный доступ к конфигурации приложения.
@@ -14,7 +16,7 @@ import io.vertx.core.json.JsonObject;
  * зашитое в соответствующем методе этого класса.
  */
 public final class AppConfig {
-
+    private static final Logger LOG = LoggerFactory.getLogger(AppConfig.class);
     private static final int FALLBACK_HTTP_PORT = 8080;
     private static final int FALLBACK_DB_PORT = 5432;
     private static final int FALLBACK_DB_POOL_MAX_SIZE = 5;
@@ -180,17 +182,18 @@ public final class AppConfig {
      */
     private int integer(String key, int fallback) {
         Object value = raw.getValue(key);
-        if (value == null) {
-            return fallback;
-        }
+        int result = fallback;
         if (value instanceof Number number) {
-            return number.intValue();
+            result = number.intValue();
+        } else if (value != null) {
+            try {
+                result = Integer.parseInt(String.valueOf(value).trim());
+            } catch (NumberFormatException e) {
+                LOG.warn("Invalid integer value for key {}: {}", key, value);
+            }
         }
-        try {
-            return Integer.parseInt(String.valueOf(value).trim());
-        } catch (NumberFormatException e) {
-            return fallback;
-        }
+
+        return result;
     }
 
     /**

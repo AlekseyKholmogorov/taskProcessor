@@ -14,6 +14,9 @@ import io.vertx.ext.web.RoutingContext;
  * но не управляет жизненным циклом HTTP-сервера — это забота вертикла.
  */
 public class TaskRoutes {
+    private static final String USER_ID = "userId";
+    private static final int STATUS_BAD_REQUEST = 400;
+    private static final int STATUS_SERVER_ERROR = 500;
 
     private final TaskRepository taskRepository;
     private final EventBus eventBus;
@@ -49,23 +52,23 @@ public class TaskRoutes {
      */
     private void handleStartTask(RoutingContext ctx) {
         JsonObject body = ctx.body().asJsonObject();
-        if (body == null || !body.containsKey("userId")) {
-            ctx.response().setStatusCode(400).end("Missing userId");
+        if (body == null || !body.containsKey(USER_ID)) {
+            ctx.response().setStatusCode(STATUS_BAD_REQUEST).end("Missing userId");
             return;
         }
 
-        Integer userId = body.getInteger("userId");
+        Integer userId = body.getInteger(USER_ID);
 
         taskRepository.createTask(userId)
                 .onSuccess(taskId -> {
                     // Отправляем задачу воркеру через EventBus
-                    JsonObject taskData = new JsonObject().put("taskId", taskId).put("userId", userId);
+                    JsonObject taskData = new JsonObject().put("taskId", taskId).put(USER_ID, userId);
                     eventBus.send(appConfig.taskStartAddress(), taskData);
 
                     ctx.response()
                             .putHeader("content-type", "application/json")
                             .end(new JsonObject().put("taskId", taskId).put("status", "STARTED").encode());
                 })
-                .onFailure(err -> ctx.response().setStatusCode(500).end("DB Error: " + err.getMessage()));
+                .onFailure(err -> ctx.response().setStatusCode(STATUS_SERVER_ERROR).end("DB Error: " + err.getMessage()));
     }
 }

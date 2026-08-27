@@ -15,7 +15,7 @@ import io.vertx.core.json.JsonObject;
  */
 public record TaskProgress(int taskId, int userId, int progress, TaskStatus status) {
 
-    private static final int COMPLETE_PROGRESS = 100;
+    public static final int COMPLETE_PROGRESS = 100;
 
     /**
      * Создаёт уведомление, выводя статус из значения прогресса.

@@ -65,9 +65,9 @@ public class TaskWorkerVerticle extends VerticleBase {
                     if (currentProgress == null) {
                         return;
                     }
-                    int newProgress = Math.min(currentProgress + appConfig.progressStep(), 100);
+                    int newProgress = Math.min(currentProgress + appConfig.progressStep(), TaskProgress.COMPLETE_PROGRESS);
 
-                    if (newProgress >= 100) {
+                    if (newProgress >= TaskProgress.COMPLETE_PROGRESS) {
                         vertx.cancelTimer(timerId);
                     }
 
