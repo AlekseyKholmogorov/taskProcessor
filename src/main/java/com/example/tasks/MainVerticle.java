@@ -8,7 +8,7 @@ import io.vertx.config.ConfigRetriever;
 import io.vertx.core.DeploymentOptions;
 import io.vertx.core.Future;
 import io.vertx.core.VerticleBase;
-import io.vertx.core.Vertx;
+import io.vertx.core.json.JsonObject;
 import io.vertx.pgclient.PgBuilder;
 import io.vertx.pgclient.PgConnectOptions;
 import io.vertx.sqlclient.Pool;
@@ -26,43 +26,34 @@ public class MainVerticle extends VerticleBase {
     private Pool dbPool;
     private AppConfig appConfig;
 
-    /**
-     * Точка входа для приложения на Vert.x 5.
-     *
-     * @param args аргументы командной строки
-     */
-    public static void main(String[] args) {
-        Vertx vertx = Vertx.vertx();
-
-        ConfigRetriever.create(vertx).getConfig()
-                .compose(conf -> vertx.deployVerticle(
-                        new MainVerticle(),
-                        new DeploymentOptions().setConfig(conf)))
-                .onSuccess(id -> System.out.println("MainVerticle успешно развернут. ID: " + id))
-                .onFailure(err -> {
-                    System.err.println("Ошибка при развертывании MainVerticle:");
-                    err.printStackTrace();
-                    System.exit(1);
-                });
-    }
-
     @Override
     public Future<?> start() {
-        appConfig = new AppConfig(config());
-        initDatabasePool();
-
-        TaskRepository taskRepository = new TaskRepository(dbPool);
-        DeploymentOptions options = new DeploymentOptions().setConfig(config());
-
-        // Воркер поднимается первым: его консьюмер task.start должен быть
-        // зарегистрирован до того, как HTTP-сервер начнёт принимать запросы
-        return vertx.deployVerticle(new TaskWorkerVerticle(taskRepository), options)
-                .compose(id -> vertx.deployVerticle(new HttpServerVerticle(taskRepository), options));
+        return ConfigRetriever.create(vertx).getConfig()
+                .compose(this::bootstrap);
     }
 
     @Override
     public Future<?> stop() {
         return dbPool == null ? Future.succeededFuture() : dbPool.close();
+    }
+
+    /**
+     * Собирает граф объектов и разворачивает прикладные вертиклы.
+     *
+     * @param conf разобранная конфигурация приложения
+     * @return результат разворачивания
+     */
+    private Future<?> bootstrap(JsonObject conf) {
+        appConfig = new AppConfig(conf);
+        initDatabasePool();
+
+        TaskRepository taskRepository = new TaskRepository(dbPool);
+        DeploymentOptions options = new DeploymentOptions().setConfig(conf);
+
+        // Воркер поднимается первым: его консьюмер task.start должен быть
+        // зарегистрирован до того, как HTTP-сервер начнёт принимать запросы
+        return vertx.deployVerticle(new TaskWorkerVerticle(taskRepository), options)
+                .compose(id -> vertx.deployVerticle(new HttpServerVerticle(taskRepository), options));
     }
 
     /**

@@ -13,7 +13,8 @@ repositories {
 }
 
 def vertxVersion = '5.1.6'
-def mainClassName = 'com.example.tasks.MainVerticle'
+def mainClassName = 'io.vertx.launcher.application.VertxApplication'
+def mainVerticleName = 'com.example.tasks.MainVerticle'
 
 application {
     mainClass.set(mainClassName)
@@ -30,6 +31,7 @@ dependencies {
     implementation 'io.vertx:vertx-config'
     implementation 'io.vertx:vertx-web'
     implementation 'io.vertx:vertx-pg-client'
+    implementation 'io.vertx:vertx-launcher-application'
     implementation 'com.fasterxml.jackson.core:jackson-databind:2.17.0'
     implementation 'ch.qos.logback:logback-classic:1.5.3'
 }
@@ -38,7 +40,8 @@ shadowJar {
     archiveClassifier.set('fat')
     archiveBaseName.set('vertx-background-tasks')
     manifest {
-        attributes 'Main-Class': mainClassName
+        attributes 'Main-Class'   : mainClassName
+        attributes 'Main-Verticle': mainVerticleName
     }
     mergeServiceFiles()
 }
@@ -69,4 +72,5 @@ tasks.withType(Checkstyle).configureEach {
 
 tasks.named('run') {
     systemProperty 'vertx-config-path', 'config/app/config.json'
+    args = [mainVerticleName]
 }
