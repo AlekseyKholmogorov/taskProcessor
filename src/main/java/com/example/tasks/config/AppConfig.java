@@ -1,4 +1,4 @@
-package com.example.tasks;
+package com.example.tasks.config;
 
 import io.vertx.core.json.JsonObject;
 
@@ -14,6 +14,12 @@ import io.vertx.core.json.JsonObject;
  * зашитое в соответствующем методе этого класса.
  */
 public final class AppConfig {
+
+    private static final int FALLBACK_HTTP_PORT = 8080;
+    private static final int FALLBACK_DB_PORT = 5432;
+    private static final int FALLBACK_DB_POOL_MAX_SIZE = 5;
+    private static final int FALLBACK_TASK_TICK_INTERVAL_MS = 1000;
+    private static final int FALLBACK_TASK_PROGRESS_STEP = 20;
 
     private final JsonObject raw;
 
@@ -32,7 +38,7 @@ public final class AppConfig {
      * @return номер TCP-порта
      */
     public int httpPort() {
-        return integer("HTTP_PORT", 8080);
+        return integer("HTTP_PORT", FALLBACK_HTTP_PORT);
     }
 
     /**
@@ -68,7 +74,7 @@ public final class AppConfig {
      * @return номер TCP-порта
      */
     public int dbPort() {
-        return integer("DB_PORT", 5432);
+        return integer("DB_PORT", FALLBACK_DB_PORT);
     }
 
     /**
@@ -108,7 +114,7 @@ public final class AppConfig {
      * @return число соединений
      */
     public int dbPoolMaxSize() {
-        return integer("DB_POOL_MAX_SIZE", 5);
+        return integer("DB_POOL_MAX_SIZE", FALLBACK_DB_POOL_MAX_SIZE);
     }
 
     /**
@@ -135,7 +141,7 @@ public final class AppConfig {
      * @return интервал в миллисекундах
      */
     public long tickIntervalMs() {
-        return integer("TASK_TICK_INTERVAL_MS", 1000);
+        return integer("TASK_TICK_INTERVAL_MS", FALLBACK_TASK_TICK_INTERVAL_MS);
     }
 
     /**
@@ -144,7 +150,7 @@ public final class AppConfig {
      * @return величина шага в процентах
      */
     public int progressStep() {
-        return integer("TASK_PROGRESS_STEP", 20);
+        return integer("TASK_PROGRESS_STEP", FALLBACK_TASK_PROGRESS_STEP);
     }
 
     /**

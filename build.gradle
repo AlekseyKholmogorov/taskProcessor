@@ -66,3 +66,7 @@ tasks.withType(Checkstyle).configureEach {
         html.required = true
     }
 }
+
+tasks.named('run') {
+    systemProperty 'vertx-config-path', 'config/app/config.json'
+}

@@ -1,0 +1,88 @@
+package com.example.tasks.verticle;
+
+import com.example.tasks.config.AppConfig;
+import com.example.tasks.model.TaskProgress;
+import com.example.tasks.repository.TaskRepository;
+import com.example.tasks.web.TaskRoutes;
+import com.example.tasks.web.WebSocketRegistry;
+import io.vertx.core.AbstractVerticle;
+import io.vertx.core.Promise;
+import io.vertx.core.http.ServerWebSocket;
+import io.vertx.core.json.JsonObject;
+import io.vertx.ext.web.Router;
+import io.vertx.ext.web.handler.BodyHandler;
+
+/**
+ * Вертикл HTTP-слоя.
+ *
+ * <p>Поднимает HTTP-сервер, монтирует REST-маршруты и обслуживает
+ * WebSocket-подключения, пересылая в них уведомления о прогрессе,
+ * которые приходят из EventBus.
+ */
+public class HttpServerVerticle extends AbstractVerticle {
+
+    private final TaskRepository taskRepository;
+    private final WebSocketRegistry socketRegistry = new WebSocketRegistry();
+    private AppConfig appConfig;
+
+    /**
+     * Создаёт вертикл HTTP-слоя.
+     *
+     * @param taskRepository репозиторий задач, нужный REST-маршрутам
+     */
+    public HttpServerVerticle(TaskRepository taskRepository) {
+        this.taskRepository = taskRepository;
+    }
+
+    @Override
+    public void start(Promise<Void> startPromise) {
+        appConfig = new AppConfig(config());
+
+        Router router = Router.router(vertx);
+        router.route().handler(BodyHandler.create());
+        new TaskRoutes(taskRepository, vertx.eventBus(), appConfig).mount(router);
+
+        // Слушаем обновления прогресса из EventBus (от воркера)
+        vertx.eventBus().<JsonObject>consumer(appConfig.taskProgressAddress(), message -> {
+            TaskProgress progress = TaskProgress.fromJson(message.body());
+            socketRegistry.send(progress.userId(), progress.toJson());
+        });
+
+        vertx.createHttpServer()
+                .requestHandler(router)
+                .webSocketHandler(this::handleWebSocket)
+                .listen(appConfig.httpPort())
+                .onSuccess(server -> {
+                    System.out.println("HTTP сервер запущен на порту " + server.actualPort());
+                    startPromise.complete();
+                })
+                .onFailure(err -> {
+                    System.err.println("Ошибка запуска HTTP-сервера: " + err.getMessage());
+                    startPromise.fail(err);
+                });
+    }
+
+    /**
+     * Обработчик WebSocket-соединений.
+     * Ожидает подключения по пути вида {@code /ws/tasks/{userId}}.
+     *
+     * @param ws сокет-соединение
+     */
+    private void handleWebSocket(ServerWebSocket ws) {
+        String path = ws.path();
+        String prefix = appConfig.wsPathPrefix();
+
+        if (!path.startsWith(prefix)) {
+            ws.close();
+            return;
+        }
+
+        try {
+            Integer userId = Integer.parseInt(path.substring(prefix.length()));
+            socketRegistry.register(userId, ws);
+            ws.writeTextMessage(new JsonObject().put("message", "Connected").encode());
+        } catch (NumberFormatException e) {
+            ws.close();
+        }
+    }
+}

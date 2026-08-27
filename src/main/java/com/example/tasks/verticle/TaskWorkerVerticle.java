@@ -1,26 +1,28 @@
-package com.example.tasks;
+package com.example.tasks.verticle;
 
+import com.example.tasks.config.AppConfig;
+import com.example.tasks.model.TaskProgress;
+import com.example.tasks.model.TaskStatus;
+import com.example.tasks.repository.TaskRepository;
 import io.vertx.core.AbstractVerticle;
 import io.vertx.core.json.JsonObject;
-import io.vertx.sqlclient.Pool;
-import io.vertx.sqlclient.Tuple;
 
 /**
  * Вертикл для имитации фоновой обработки длительных задач.
  * Не блокирует EventLoop основного потока благодаря использованию таймеров и асинхронного EventBus.
  */
-public class WorkerVerticle extends AbstractVerticle {
+public class TaskWorkerVerticle extends AbstractVerticle {
 
-    private final Pool dbPool;
+    private final TaskRepository taskRepository;
     private AppConfig appConfig;
 
     /**
-     * Конструктор WorkerVerticle.
+     * Конструктор вертикла-обработчика.
      *
-     * @param dbPool пул соединений с базой данных для обновления статуса задачи
+     * @param taskRepository репозиторий для чтения и обновления состояния задач
      */
-    public WorkerVerticle(Pool dbPool) {
-        this.dbPool = dbPool;
+    public TaskWorkerVerticle(TaskRepository taskRepository) {
+        this.taskRepository = taskRepository;
     }
 
     @Override
@@ -53,29 +55,20 @@ public class WorkerVerticle extends AbstractVerticle {
      * @param timerId идентификатор таймера для его отмены при завершении
      */
     private void updateProgress(Integer taskId, Integer userId, Long timerId) {
-        dbPool.preparedQuery("SELECT progress FROM tasks WHERE id = $1")
-                .execute(Tuple.of(taskId))
-                .onSuccess(rowSet -> {
-                    if (rowSet.iterator().hasNext()) {
-                        int currentProgress = rowSet.iterator().next().getInteger("progress");
-                        int newProgress = currentProgress + appConfig.progressStep();
-
-                        if (newProgress >= 100) {
-                            newProgress = 100;
-                            vertx.cancelTimer(timerId);
-                            updateTaskInDb(taskId, "COMPLETED", newProgress);
-                        } else {
-                            updateTaskInDb(taskId, "IN_PROGRESS", newProgress);
-                        }
-
-                        JsonObject update = new JsonObject()
-                                .put("taskId", taskId)
-                                .put("userId", userId)
-                                .put("progress", newProgress)
-                                .put("status", newProgress == 100 ? "COMPLETED" : "IN_PROGRESS");
-
-                        vertx.eventBus().publish(appConfig.taskProgressAddress(), update);
+        taskRepository.findProgress(taskId)
+                .onSuccess(currentProgress -> {
+                    if (currentProgress == null) {
+                        return;
                     }
+                    int newProgress = Math.min(currentProgress + appConfig.progressStep(), 100);
+
+                    if (newProgress >= 100) {
+                        vertx.cancelTimer(timerId);
+                    }
+
+                    TaskProgress progress = TaskProgress.of(taskId, userId, newProgress);
+                    updateTaskInDb(taskId, progress.status(), newProgress);
+                    vertx.eventBus().publish(appConfig.taskProgressAddress(), progress.toJson());
                 })
                 .onFailure(err -> System.err.println("Failed to fetch progress: " + err.getMessage()));
     }
@@ -87,9 +80,8 @@ public class WorkerVerticle extends AbstractVerticle {
      * @param status новый статус задачи
      * @param progress текущий прогресс (0-100)
      */
-    private void updateTaskInDb(Integer taskId, String status, int progress) {
-        dbPool.preparedQuery("UPDATE tasks SET status = $1, progress = $2 WHERE id = $3")
-                .execute(Tuple.of(status, progress, taskId))
+    private void updateTaskInDb(Integer taskId, TaskStatus status, int progress) {
+        taskRepository.updateProgress(taskId, status, progress)
                 .onFailure(err -> System.err.println("Failed to update task: " + err.getMessage()));
     }
 }
