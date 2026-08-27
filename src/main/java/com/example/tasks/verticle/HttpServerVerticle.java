@@ -5,8 +5,8 @@ import com.example.tasks.model.TaskProgress;
 import com.example.tasks.repository.TaskRepository;
 import com.example.tasks.web.TaskRoutes;
 import com.example.tasks.web.WebSocketRegistry;
-import io.vertx.core.AbstractVerticle;
-import io.vertx.core.Promise;
+import io.vertx.core.Future;
+import io.vertx.core.VerticleBase;
 import io.vertx.core.http.ServerWebSocket;
 import io.vertx.core.json.JsonObject;
 import io.vertx.ext.web.Router;
@@ -19,7 +19,7 @@ import io.vertx.ext.web.handler.BodyHandler;
  * WebSocket-подключения, пересылая в них уведомления о прогрессе,
  * которые приходят из EventBus.
  */
-public class HttpServerVerticle extends AbstractVerticle {
+public class HttpServerVerticle extends VerticleBase {
 
     private final TaskRepository taskRepository;
     private final WebSocketRegistry socketRegistry = new WebSocketRegistry();
@@ -35,7 +35,7 @@ public class HttpServerVerticle extends AbstractVerticle {
     }
 
     @Override
-    public void start(Promise<Void> startPromise) {
+    public Future<?> start() {
         appConfig = new AppConfig(config());
 
         Router router = Router.router(vertx);
@@ -48,18 +48,11 @@ public class HttpServerVerticle extends AbstractVerticle {
             socketRegistry.send(progress.userId(), progress.toJson());
         });
 
-        vertx.createHttpServer()
+        return vertx.createHttpServer()
                 .requestHandler(router)
                 .webSocketHandler(this::handleWebSocket)
                 .listen(appConfig.httpPort())
-                .onSuccess(server -> {
-                    System.out.println("HTTP сервер запущен на порту " + server.actualPort());
-                    startPromise.complete();
-                })
-                .onFailure(err -> {
-                    System.err.println("Ошибка запуска HTTP-сервера: " + err.getMessage());
-                    startPromise.fail(err);
-                });
+                .onSuccess(server -> System.out.println("HTTP сервер запущен на порту " + server.actualPort()));
     }
 
     /**

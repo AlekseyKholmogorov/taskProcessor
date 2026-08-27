@@ -5,9 +5,9 @@ import com.example.tasks.repository.TaskRepository;
 import com.example.tasks.verticle.HttpServerVerticle;
 import com.example.tasks.verticle.TaskWorkerVerticle;
 import io.vertx.config.ConfigRetriever;
-import io.vertx.core.AbstractVerticle;
 import io.vertx.core.DeploymentOptions;
-import io.vertx.core.Promise;
+import io.vertx.core.Future;
+import io.vertx.core.VerticleBase;
 import io.vertx.core.Vertx;
 import io.vertx.pgclient.PgBuilder;
 import io.vertx.pgclient.PgConnectOptions;
@@ -21,7 +21,7 @@ import io.vertx.sqlclient.PoolOptions;
  * прикладные вертиклы в порядке, гарантирующем готовность обработчика
  * задач до того, как HTTP-сервер начнёт принимать запросы.
  */
-public class MainVerticle extends AbstractVerticle {
+public class MainVerticle extends VerticleBase {
 
     private Pool dbPool;
     private AppConfig appConfig;
@@ -47,7 +47,7 @@ public class MainVerticle extends AbstractVerticle {
     }
 
     @Override
-    public void start(Promise<Void> startPromise) {
+    public Future<?> start() {
         appConfig = new AppConfig(config());
         initDatabasePool();
 
@@ -56,10 +56,8 @@ public class MainVerticle extends AbstractVerticle {
 
         // Воркер поднимается первым: его консьюмер task.start должен быть
         // зарегистрирован до того, как HTTP-сервер начнёт принимать запросы
-        vertx.deployVerticle(new TaskWorkerVerticle(taskRepository), options)
-                .compose(id -> vertx.deployVerticle(new HttpServerVerticle(taskRepository), options))
-                .onSuccess(id -> startPromise.complete())
-                .onFailure(startPromise::fail);
+        return vertx.deployVerticle(new TaskWorkerVerticle(taskRepository), options)
+                .compose(id -> vertx.deployVerticle(new HttpServerVerticle(taskRepository), options));
     }
 
     /**

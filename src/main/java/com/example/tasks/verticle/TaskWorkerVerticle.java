@@ -4,14 +4,15 @@ import com.example.tasks.config.AppConfig;
 import com.example.tasks.model.TaskProgress;
 import com.example.tasks.model.TaskStatus;
 import com.example.tasks.repository.TaskRepository;
-import io.vertx.core.AbstractVerticle;
+import io.vertx.core.Future;
+import io.vertx.core.VerticleBase;
 import io.vertx.core.json.JsonObject;
 
 /**
  * Вертикл для имитации фоновой обработки длительных задач.
  * Не блокирует EventLoop основного потока благодаря использованию таймеров и асинхронного EventBus.
  */
-public class TaskWorkerVerticle extends AbstractVerticle {
+public class TaskWorkerVerticle extends VerticleBase {
 
     private final TaskRepository taskRepository;
     private AppConfig appConfig;
@@ -26,12 +27,12 @@ public class TaskWorkerVerticle extends AbstractVerticle {
     }
 
     @Override
-    public void start() {
+    public Future<?> start() {
         appConfig = new AppConfig(config());
-        vertx.eventBus().<JsonObject>consumer(appConfig.taskStartAddress(), message -> {
+        return vertx.eventBus().<JsonObject>consumer(appConfig.taskStartAddress(), message -> {
             JsonObject taskData = message.body();
             processTask(taskData.getInteger("taskId"), taskData.getInteger("userId"));
-        });
+        }).completion();
     }
 
     /**
