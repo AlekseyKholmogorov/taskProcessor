@@ -6,7 +6,7 @@
 ## Особенности архитектуры
 - **Серверная часть**: Vert.x (HttpServer, Router, EventBus).
 - **Асинхронность**: Изолированная обработка задач без блокировки основного потока.
-- **Адресная доставка прогресса**: Уведомления публикуются во внутреннюю шину `task.progress`, а `MainVerticle` перенаправляет их строго в активный WebSocket конкретного `userId`.
+- **Адресная доставка прогресса**: Уведомления публикуются во внутреннюю шину `task.progress`, а `HttpServerVerticle` перенаправляет их через `WebSocketRegistry` строго в активный WebSocket конкретного `userId`.
 - **База данных**: PostgreSQL, используется неблокирующий реактивный драйвер `vertx-pg-client`.
 - **Сборка**: Gradle Shadow Plugin для сборки исполняемого fat-jar.
 
@@ -37,20 +37,49 @@
 Если вы хотите запустить приложение напрямую через Gradle, вам потребуется запущенный экземпляр PostgreSQL.
 
 1. Убедитесь, что PostgreSQL запущен и создана база task_db с пользователем vertx.
-2. Задайте переменные окружения для подключения к БД. В Linux/macOS это делается так:
+2. Задайте переменные окружения для подключения к БД.
+
+   Linux/macOS:
    ```bash
    export DB_HOST=localhost
    export DB_PORT=5432
    export DB_NAME=task_db
    export DB_USER=vertx
-   export DB_PASS=vertx_password
+   export DB_PASSWORD=vertx_password
    ```
+
+   Windows (PowerShell):
+   ```powershell
+   $env:DB_HOST="localhost"
+   $env:DB_PORT="5432"
+   $env:DB_NAME="task_db"
+   $env:DB_USER="vertx"
+   $env:DB_PASSWORD="vertx_password"
+   ```
+
+   Альтернатива: скопируйте `config/app/config.example.json` в `config/app/config.json`, задайте `DB_PASSWORD` и запускайте через `./gradlew run`.
 3. Выполните сборку и запуск приложения с помощью Gradle-обертки:
    ```bash
    ./gradlew shadowJar
    java -jar build/libs/vertx-background-tasks-1.0.0-fat.jar
    ```
-   
+
+---
+
+## Тесты
+
+Проект покрыт unit- и integration-тестами (JUnit 5, Vert.x JUnit5, Mockito, Testcontainers + PostgreSQL).
+Для integration-тестов нужен Docker.
+
+```bash
+./gradlew test
+```
+
+На Windows: `gradlew.bat test`.
+
+Отчёт JaCoCo: `build/reports/jacoco/test/html/index.html`.
+Порог покрытия в сборке: 95% (`jacocoTestCoverageVerification`).
+
 ---
 
 ## Инструкция по использованию (API и WebSocket)
@@ -73,7 +102,7 @@ socket.onclose = () => console.log('🔌 Соединение закрыто');
 Сразу после подключения сервер отправит подтверждение: {"message":"Connected"}.
 
 ### 2. Запуск фоновой задачи
-Инициируйте выполнение задачи, передав JSON с userId.
+Инициируйте создание задачи, передав JSON с userId.
 
 * **Endpoint**: `POST /api/tasks`
 * **Content-Type**: `application/json`
@@ -87,7 +116,7 @@ socket.onclose = () => console.log('🔌 Соединение закрыто');
 ```json
 {
   "taskId": 1,
-  "status": "STARTED"
+  "status": "IN_PROGRESS"
 }
 ```
 
