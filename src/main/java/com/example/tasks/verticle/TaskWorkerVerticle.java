@@ -16,6 +16,7 @@ import org.slf4j.LoggerFactory;
 public class TaskWorkerVerticle extends VerticleBase {
 
     private static final Logger LOG = LoggerFactory.getLogger(TaskWorkerVerticle.class);
+    private static final int STATUS_BAD_REQUEST = 400;
 
     private final TaskRepository taskRepository;
     private AppConfig appConfig;
@@ -34,7 +35,13 @@ public class TaskWorkerVerticle extends VerticleBase {
         appConfig = new AppConfig(config());
         return vertx.eventBus().<JsonObject>consumer(appConfig.taskStartAddress(), message -> {
             JsonObject taskData = message.body();
-            processTask(taskData.getInteger("taskId"));
+            Integer taskId = taskData.getInteger("taskId");
+            if (taskId == null) {
+                message.fail(STATUS_BAD_REQUEST, "taskId is required");
+                return;
+            }
+            processTask(taskId);
+            message.reply(new JsonObject().put("accepted", true));
         }).completion();
     }
 

@@ -1,11 +1,16 @@
 package com.example.tasks.web;
 
 import com.example.tasks.config.AppConfig;
+import com.example.tasks.model.TaskStatus;
 import com.example.tasks.repository.TaskRepository;
+import io.vertx.core.Future;
+import io.vertx.core.eventbus.DeliveryOptions;
 import io.vertx.core.eventbus.EventBus;
 import io.vertx.core.json.JsonObject;
 import io.vertx.ext.web.Router;
 import io.vertx.ext.web.RoutingContext;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * REST-маршруты для работы с фоновыми задачами.
@@ -14,9 +19,12 @@ import io.vertx.ext.web.RoutingContext;
  * но не управляет жизненным циклом HTTP-сервера — это забота вертикла.
  */
 public class TaskRoutes {
+    private static final Logger LOG = LoggerFactory.getLogger(TaskRoutes.class);
+
     private static final String USER_ID = "userId";
     private static final int STATUS_BAD_REQUEST = 400;
     private static final int STATUS_SERVER_ERROR = 500;
+    private static  final int SEND_TIMEOUT = 5000;
 
     private final TaskRepository taskRepository;
     private final EventBus eventBus;
@@ -59,16 +67,30 @@ public class TaskRoutes {
 
         Integer userId = body.getInteger(USER_ID);
 
-        taskRepository.createTask(userId)
-                .onSuccess(taskId -> {
-                    // Отправляем задачу воркеру через EventBus
-                    JsonObject taskData = new JsonObject().put("taskId", taskId).put(USER_ID, userId);
-                    eventBus.send(appConfig.taskStartAddress(), taskData);
+        createAndDispatchTask(userId)
+                .onSuccess(taskId -> ctx.response()
+                        .putHeader("content-type", "application/json")
+                        .end(new JsonObject().put("taskId", taskId).put("status", TaskStatus.IN_PROGRESS.name()).encode()))
+                .onFailure(err -> {
+                    LOG.error("Failed to start task for user {}", userId, err);
+                    ctx.response().setStatusCode(STATUS_SERVER_ERROR).end("Task worker unavailable");
+                });
+    }
 
-                    ctx.response()
-                            .putHeader("content-type", "application/json")
-                            .end(new JsonObject().put("taskId", taskId).put("status", "STARTED").encode());
-                })
-                .onFailure(err -> ctx.response().setStatusCode(STATUS_SERVER_ERROR).end("DB Error: " + err.getMessage()));
+    private Future<Integer> createAndDispatchTask(Integer userId) {
+        return taskRepository.createTask(userId)
+                .compose(taskId -> {
+                    JsonObject taskData = new JsonObject().put("taskId", taskId).put(USER_ID, userId);
+                    DeliveryOptions delivery = new DeliveryOptions().setSendTimeout(SEND_TIMEOUT);
+
+                    return eventBus.<JsonObject>request(appConfig.taskStartAddress(), taskData, delivery)
+                            .map(reply -> taskId) // Если успех, пробрасываем taskId дальше
+                            .recover(err -> {
+                                // В случае ошибки EventBus запускаем компенсацию
+                                LOG.warn("Worker didn't respond for task {}. Rolling back...", taskId);
+                                return taskRepository.deleteTask(taskId)
+                                        .compose(v -> Future.failedFuture(err));
+                            });
+                });
     }
 }

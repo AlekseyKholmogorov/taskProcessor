@@ -25,6 +25,7 @@ public class TaskRepository {
             WHERE id = $5
             RETURNING user_id, progress, status
             """;
+    private static final String SQL_DELETE_TASK = "DELETE FROM tasks WHERE id = $1";
 
     private final Pool pool;
 
@@ -85,5 +86,11 @@ public class TaskRepository {
                             TaskStatus.valueOf(row.getString("status"))
                     );
                 });
+    }
+
+    public Future<Void> deleteTask(Integer taskId) {
+        return pool.preparedQuery(SQL_DELETE_TASK)
+                .execute(Tuple.of(taskId))
+                .mapEmpty();
     }
 }
