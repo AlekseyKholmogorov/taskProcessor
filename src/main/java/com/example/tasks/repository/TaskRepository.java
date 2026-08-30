@@ -1,5 +1,6 @@
 package com.example.tasks.repository;
 
+import com.example.tasks.model.TaskProgress;
 import com.example.tasks.model.TaskStatus;
 import io.vertx.core.Future;
 import io.vertx.sqlclient.Pool;
@@ -18,8 +19,12 @@ public class TaskRepository {
 
     private static final String SQL_INSERT_TASK =
             "INSERT INTO tasks (user_id, status, progress) VALUES ($1, 'IN_PROGRESS', 0) RETURNING id";
-    private static final String SQL_SELECT_PROGRESS = "SELECT progress FROM tasks WHERE id = $1";
-    private static final String SQL_UPDATE_PROGRESS = "UPDATE tasks SET status = $1, progress = $2 WHERE id = $3";
+    private static final String SQL_INCREMENT_PROGRESS = """
+            UPDATE tasks
+            SET progress = LEAST(progress + $1, $2), status = CASE WHEN progress + $1 >= $2 THEN $3 ELSE $4 END
+            WHERE id = $5
+            RETURNING user_id, progress, status
+            """;
 
     private final Pool pool;
 
@@ -45,31 +50,40 @@ public class TaskRepository {
     }
 
     /**
-     * Возвращает текущий прогресс задачи.
+     * Атомарно увеличивает прогресс задачи на заданный шаг.
+     *
+     * <p>Весь переход «текущее значение плюс шаг» выполняется одним запросом:
+     * чтение и запись не могут разъехаться между двумя конкурентными обновлениями.
+     * При достижении порога завершения прогресс клампится на максимум,
+     * а статус становится {@code COMPLETED}.
      *
      * @param taskId идентификатор задачи
-     * @return значение прогресса либо {@code null}, если задачи с таким идентификатором нет
+     * @param step   величина приращения в процентах
+     * @return новое состояние задачи либо {@code null}, если задачи не существует
      */
-    public Future<Integer> findProgress(Integer taskId) {
-        return pool.preparedQuery(SQL_SELECT_PROGRESS)
-                .execute(Tuple.of(taskId))
+    public Future<TaskProgress> incrementProgress(Integer taskId, int step) {
+        Tuple params = Tuple.of(
+                step,
+                TaskProgress.COMPLETE_PROGRESS,
+                TaskStatus.COMPLETED.name(),
+                TaskStatus.IN_PROGRESS.name(),
+                taskId
+        );
+
+        return pool.preparedQuery(SQL_INCREMENT_PROGRESS)
+                .execute(params)
                 .map(rowSet -> {
                     RowIterator<Row> iterator = rowSet.iterator();
-                    return iterator.hasNext() ? iterator.next().getInteger("progress") : null;
+                    if (!iterator.hasNext()) {
+                        return null;
+                    }
+                    Row row = iterator.next();
+                    return new TaskProgress(
+                            taskId,
+                            row.getInteger("user_id"),
+                            row.getInteger("progress"),
+                            TaskStatus.valueOf(row.getString("status"))
+                    );
                 });
-    }
-
-    /**
-     * Обновляет статус и прогресс задачи.
-     *
-     * @param taskId   идентификатор задачи
-     * @param status   новый статус
-     * @param progress новое значение прогресса
-     * @return результат выполнения без полезной нагрузки
-     */
-    public Future<Void> updateProgress(Integer taskId, TaskStatus status, int progress) {
-        return pool.preparedQuery(SQL_UPDATE_PROGRESS)
-                .execute(Tuple.of(status.name(), progress, taskId))
-                .mapEmpty();
     }
 }

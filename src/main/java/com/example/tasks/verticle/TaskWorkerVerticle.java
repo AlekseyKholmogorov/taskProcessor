@@ -1,7 +1,6 @@
 package com.example.tasks.verticle;
 
 import com.example.tasks.config.AppConfig;
-import com.example.tasks.model.TaskProgress;
 import com.example.tasks.model.TaskStatus;
 import com.example.tasks.repository.TaskRepository;
 import io.vertx.core.Future;
@@ -35,7 +34,7 @@ public class TaskWorkerVerticle extends VerticleBase {
         appConfig = new AppConfig(config());
         return vertx.eventBus().<JsonObject>consumer(appConfig.taskStartAddress(), message -> {
             JsonObject taskData = message.body();
-            processTask(taskData.getInteger("taskId"), taskData.getInteger("userId"));
+            processTask(taskData.getInteger("taskId"));
         }).completion();
     }
 
@@ -43,50 +42,37 @@ public class TaskWorkerVerticle extends VerticleBase {
      * Асинхронно обрабатывает задачу, имитируя длительный процесс с помощью таймера.
      *
      * @param taskId идентификатор задачи
-     * @param userId идентификатор пользователя-владельца
      */
-    private void processTask(Integer taskId, Integer userId) {
+    private void processTask(Integer taskId) {
         // Устанавливаем таймер, который срабатывает каждые 1000мс (1 сек)
-        vertx.setPeriodic(appConfig.tickIntervalMs(), id -> {
-            updateProgress(taskId, userId, id);
-        });
+        vertx.setPeriodic(appConfig.tickIntervalMs(), id -> onTick(taskId, id));
     }
 
     /**
-     * Инкрементирует прогресс выполнения задачи, обновляет БД и рассылает уведомления.
+     * Обрабатывает очередной тик: инкрементирует прогресс и рассылает
+     * обновление, либо останавливает таймер в терминальных состояниях.
      *
-     * @param taskId идентификатор задачи
-     * @param userId идентификатор пользователя
-     * @param timerId идентификатор таймера для его отмены при завершении
+     * @param taskId  идентификатор задачи
+     * @param timerId идентификатор таймера для отмены при завершении
      */
-    private void updateProgress(Integer taskId, Integer userId, Long timerId) {
-        taskRepository.findProgress(taskId)
-                .onSuccess(currentProgress -> {
-                    if (currentProgress == null) {
+    private void onTick(Integer taskId, Long timerId) {
+        taskRepository.incrementProgress(taskId, appConfig.progressStep())
+                .onSuccess(progress -> {
+                    if (progress == null) {
+                        LOG.warn("Task {} no longer exists, cancelling timer", taskId);
+                        vertx.cancelTimer(timerId);
                         return;
                     }
-                    int newProgress = Math.min(currentProgress + appConfig.progressStep(), TaskProgress.COMPLETE_PROGRESS);
 
-                    if (newProgress >= TaskProgress.COMPLETE_PROGRESS) {
+                    if (progress.status() == TaskStatus.COMPLETED) {
                         vertx.cancelTimer(timerId);
                     }
 
-                    TaskProgress progress = TaskProgress.of(taskId, userId, newProgress);
-                    updateTaskInDb(taskId, progress.status(), newProgress);
                     vertx.eventBus().publish(appConfig.taskProgressAddress(), progress.toJson());
                 })
-                .onFailure(err -> LOG.error("Failed to fetch progress for task {}", taskId, err));
-    }
-
-    /**
-     * Обновляет статус и прогресс задачи в базе данных.
-     *
-     * @param taskId идентификатор задачи
-     * @param status новый статус задачи
-     * @param progress текущий прогресс (0-100)
-     */
-    private void updateTaskInDb(Integer taskId, TaskStatus status, int progress) {
-        taskRepository.updateProgress(taskId, status, progress)
-                .onFailure(err -> LOG.error("Failed to update task {}", taskId, err));
+                .onFailure(err -> {
+                    LOG.error("Failed to increment task {}, cancelling timer", taskId, err);
+                    vertx.cancelTimer(timerId);
+                });
     }
 }
