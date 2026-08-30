@@ -2,6 +2,8 @@ package com.example.tasks.web;
 
 import io.vertx.core.http.ServerWebSocket;
 import io.vertx.core.json.JsonObject;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -13,6 +15,7 @@ import java.util.concurrent.ConcurrentHashMap;
  * пользователя, которому оно предназначено.
  */
 public class WebSocketRegistry {
+    private static final Logger LOG = LoggerFactory.getLogger(WebSocketRegistry.class);
 
     private final Map<Integer, ServerWebSocket> activeSockets = new ConcurrentHashMap<>();
 
@@ -24,16 +27,17 @@ public class WebSocketRegistry {
      */
     public void register(Integer userId, ServerWebSocket ws) {
         activeSockets.put(userId, ws);
-        ws.closeHandler(v -> unregister(userId));
-    }
-
-    /**
-     * Удаляет соединение пользователя из реестра.
-     *
-     * @param userId идентификатор пользователя
-     */
-    public void unregister(Integer userId) {
-        activeSockets.remove(userId);
+        ws.closeHandler(v -> {
+            if (activeSockets.remove(userId, ws)) {
+                LOG.info(
+                        "User disconnected. Removed WebSocket for userId={}. Close status: {}",
+                        userId,
+                        ws.closeStatusCode()
+                );
+            } else {
+                LOG.debug("Stale WebSocket closed for userId={}. Active connection preserved.", userId);
+            }
+        });
     }
 
     /**
